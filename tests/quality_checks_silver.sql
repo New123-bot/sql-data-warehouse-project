@@ -1,188 +1,159 @@
---**Table silver.crm_cust_info
+/*
+===============================================================================
+Quality Checks
+===============================================================================
+Script Purpose:
+    This script performs various quality checks for data consistency, accuracy, 
+    and standardization across the 'silver' layer. It includes checks for:
+    - Null or duplicate primary keys.
+    - Unwanted spaces in string fields.
+    - Data standardization and consistency.
+    - Invalid date ranges and orders.
+    - Data consistency between related fields.
 
---Check for nulls or duplicates in primary key
---Expectation : no results row
+Usage Notes:
+    - Run these checks after data loading Silver Layer.
+    - Investigate and resolve any discrepancies found during the checks.
+===============================================================================
+*/
 
-select 
-cst_id,
-count(*)
-from silver.crm_cust_info
-group by cst_id
-having count(*) >1 or cst_id is null;
-
---Check for duplicate primary key
-
-select 
-*
-from silver.crm_cust_info
-where cst_id = 29466;
-
---Check for unwanted spaces in nvarchar colums of the table crm_cust_info
-
---Expectation : No result
-
-select cst_firstname
-from silver.crm_cust_info
-where cst_firstname != trim(cst_firstname);
-
-select cst_lastname
-from silver.crm_cust_info
-where cst_lastname != trim(cst_lastname);
-
---The below query gives all possible gender abbreviations applied
-
-select distinct cst_gndr
-from silver.crm_cust_info;
-
-select distinct cst_marital_status
-from silver.crm_cust_info;
-
-select *
-from silver.crm_cust_info
-where cst_marital_status = 'n/a';
-
-select *
-from silver.crm_cust_info
-where cst_gndr = 'n/a';
-
-select *  from silver.crm_cust_info;
-
-SELECT *
+-- ====================================================================
+-- Checking 'silver.crm_cust_info'
+-- ====================================================================
+-- Check for NULLs or Duplicates in Primary Key
+-- Expectation: No Results
+SELECT 
+    cst_id,
+    COUNT(*) 
 FROM silver.crm_cust_info
-ORDER BY cst_id ASC;
----------------------------------------------------------------------------------------------------------------------------------------------------
+GROUP BY cst_id
+HAVING COUNT(*) > 1 OR cst_id IS NULL;
 
---**Table silver.crm_prd_info
+-- Check for Unwanted Spaces
+-- Expectation: No Results
+SELECT 
+    cst_key 
+FROM silver.crm_cust_info
+WHERE cst_key != TRIM(cst_key);
 
---Check for nulls or duplicates in primary key
---Expectation :No Result
+-- Data Standardization & Consistency
+SELECT DISTINCT 
+    cst_marital_status 
+FROM silver.crm_cust_info;
 
-select 
-prd_id,
-count(*)
-from silver.crm_prd_info
-group by prd_id
-having count(*) > 1 or prd_id is null;
+-- ====================================================================
+-- Checking 'silver.crm_prd_info'
+-- ====================================================================
+-- Check for NULLs or Duplicates in Primary Key
+-- Expectation: No Results
+SELECT 
+    prd_id,
+    COUNT(*) 
+FROM silver.crm_prd_info
+GROUP BY prd_id
+HAVING COUNT(*) > 1 OR prd_id IS NULL;
 
---Check for unwanted spaces in product name field prd_nm
---Expectation :No result
+-- Check for Unwanted Spaces
+-- Expectation: No Results
+SELECT 
+    prd_nm 
+FROM silver.crm_prd_info
+WHERE prd_nm != TRIM(prd_nm);
 
-select 
-prd_nm
-from silver.crm_prd_info
-where prd_nm != trim(prd_nm);
+-- Check for NULLs or Negative Values in Cost
+-- Expectation: No Results
+SELECT 
+    prd_cost 
+FROM silver.crm_prd_info
+WHERE prd_cost < 0 OR prd_cost IS NULL;
 
---Now check for nulls or negative numbers in prd_cost
---Expectation :No result
+-- Data Standardization & Consistency
+SELECT DISTINCT 
+    prd_line 
+FROM silver.crm_prd_info;
 
-select 
-prd_cost
-from silver.crm_prd_info
-where prd_cost < 0 or prd_cost is null;
+-- Check for Invalid Date Orders (Start Date > End Date)
+-- Expectation: No Results
+SELECT 
+    * 
+FROM silver.crm_prd_info
+WHERE prd_end_dt < prd_start_dt;
 
---Now for data standardisation and consistency for the prd_line field do the follows 
+-- ====================================================================
+-- Checking 'silver.crm_sales_details'
+-- ====================================================================
+-- Check for Invalid Dates
+-- Expectation: No Invalid Dates
+SELECT 
+    NULLIF(sls_due_dt, 0) AS sls_due_dt 
+FROM bronze.crm_sales_details
+WHERE sls_due_dt <= 0 
+    OR LEN(sls_due_dt) != 8 
+    OR sls_due_dt > 20500101 
+    OR sls_due_dt < 19000101;
 
-select distinct prd_line 
-from silver.crm_prd_info;
+-- Check for Invalid Date Orders (Order Date > Shipping/Due Dates)
+-- Expectation: No Results
+SELECT 
+    * 
+FROM silver.crm_sales_details
+WHERE sls_order_dt > sls_ship_dt 
+   OR sls_order_dt > sls_due_dt;
 
---Now check for invalid prd_start_dt and prd_end_dt
---Expectation : No result
+-- Check Data Consistency: Sales = Quantity * Price
+-- Expectation: No Results
+SELECT DISTINCT 
+    sls_sales,
+    sls_quantity,
+    sls_price 
+FROM silver.crm_sales_details
+WHERE sls_sales != sls_quantity * sls_price
+   OR sls_sales IS NULL 
+   OR sls_quantity IS NULL 
+   OR sls_price IS NULL
+   OR sls_sales <= 0 
+   OR sls_quantity <= 0 
+   OR sls_price <= 0
+ORDER BY sls_sales, sls_quantity, sls_price;
 
-select 
-* 
-from 
-silver.crm_prd_info
-where prd_start_dt > prd_end_dt;
+-- ====================================================================
+-- Checking 'silver.erp_cust_az12'
+-- ====================================================================
+-- Identify Out-of-Range Dates
+-- Expectation: Birthdates between 1924-01-01 and Today
+SELECT DISTINCT 
+    bdate 
+FROM silver.erp_cust_az12
+WHERE bdate < '1924-01-01' 
+   OR bdate > GETDATE();
 
---Final check for silver.crm_prod_info table
+-- Data Standardization & Consistency
+SELECT DISTINCT 
+    gen 
+FROM silver.erp_cust_az12;
 
-select * from silver.crm_prd_info;
+-- ====================================================================
+-- Checking 'silver.erp_loc_a101'
+-- ====================================================================
+-- Data Standardization & Consistency
+SELECT DISTINCT 
+    cntry 
+FROM silver.erp_loc_a101
+ORDER BY cntry;
 
-----------------------------------------------------------------------------------------------------------------------------------------
+-- ====================================================================
+-- Checking 'silver.erp_px_cat_g1v2'
+-- ====================================================================
+-- Check for Unwanted Spaces
+-- Expectation: No Results
+SELECT 
+    * 
+FROM silver.erp_px_cat_g1v2
+WHERE cat != TRIM(cat) 
+   OR subcat != TRIM(subcat) 
+   OR maintenance != TRIM(maintenance);
 
---**Table silver.crm_sales_details
-
---Check for invalid order dates 
-
-select *
-from silver.crm_sales_details
-where sls_order_dt > sls_ship_dt or sls_order_dt > sls_due_dt;
-
---Checking Bussiness rules
-
-select distinct
-sls_sales,
-sls_quantity,
-sls_price
-from silver.crm_sales_details
-where sls_sales != sls_quantity * sls_price 
-or sls_sales is null or sls_quantity is null or sls_price is null
-or sls_sales <= 0 or sls_quantity <= 0 or sls_price <= 0
-order by sls_sales, sls_quantity, sls_price;
-
---So Business rules are perfect
---Now for final output as follows
-
-select * from silver.crm_sales_details;
-
------------------------------------------------------------------------------------------------------------------------------------------------------------------
-
---**Table silver.erp_cust_az12
-
---Identify Out of range dates
---Expected :No result
-
-select distinct
-cid,
-bdate
-from silver.erp_cust_az12
-where bdate < '1924-01-01' or bdate > getdate(); 
-
---Data standardisation and consistency
-
-select distinct gen from silver.erp_cust_az12;
-
-select * from silver.erp_cust_az12;
-
------------------------------------------------------------------------------------------------------------------------------------------------------------
-
---**Table silver.erp_loc_a101
-
---Data standardisation and consistency
-
-select distinct cntry
-from silver.erp_loc_a101
-order by cntry;
-
-select * from silver.erp_loc_a101;
-
-----------------------------------------------------------------------------------------------------------------------------------------
-
---**Table silver.erp_px_cat_g1v2
-
---Check for unwanted spaces
-
-select 
-*
-from silver.erp_px_cat_g1v2 
-where cat != trim(cat) or subcat != trim(subcat) or maintenance != trim(maintenance); 
-
---For data standardisation and consistency check as follows
-
-select distinct
-cat
-from silver.erp_px_cat_g1v2;
-
-select distinct
-subcat
-from silver.erp_px_cat_g1v2;
-
-select distinct
-maintenance
-from silver.erp_px_cat_g1v2;
-
---Now see the whole silver.erp_px_cat_g1v2 table
-
-select * from silver.erp_px_cat_g1v2;
-
---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+-- Data Standardization & Consistency
+SELECT DISTINCT 
+    maintenance 
+FROM silver.erp_px_cat_g1v2;
